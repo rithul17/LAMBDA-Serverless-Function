@@ -42,20 +42,16 @@ Components
             Response times, error rates, resource consumption.
         Provides data to the monitoring dashboard for visualization.
 
-
-# intial project structure subject to change
-
-'''
+```
 serverless-platform/
 ├── backend/
 │   ├── api/
 │   │   ├── routes/
-│   │   │   ├── functions.js
-│   │   │   └── metrics.js
 │   │   ├── controllers/
 │   │   │   ├── functionsController.js
 │   │   │   └── metricsController.js
-│   │   └── app.js
+│   │   ├── app.js
+│   │   └── functions.js
 │   ├── execution-engine/
 │   │   ├── docker/
 │   │   │   ├── python/
@@ -100,4 +96,4 @@ serverless-platform/
 ├── docker-compose.yml
 ├── package.json
 └── README.md
-'''
+```
