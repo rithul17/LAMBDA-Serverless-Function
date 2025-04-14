@@ -11,7 +11,7 @@ Components
 
     Backend API Server
 
-        Implemented using Express (Node.js) or FastAPI (Python).
+        Implemented using FastAPI (Python).
         Exposes RESTful endpoints for:
             Function deployment and management (CRUD operations).
             Triggering function executions via HTTP requests.
@@ -30,7 +30,6 @@ Components
         Supports multiple virtualization technologies:
             Docker Containers: For general-purpose function execution.
             Firecracker MicroVMs: For lightweight, secure, and fast-starting environments.
-            Nanos Unikernels (optional): For specialized, minimal-footprint applications.
         Implements:
             Pre-warmed execution environments to reduce cold start latency.
             Request batching for efficient resource utilization.
@@ -41,6 +40,45 @@ Components
         Aggregates execution data:
             Response times, error rates, resource consumption.
         Provides data to the monitoring dashboard for visualization.
+
+# Business Logic
+
+Frontend:
+
+    Role: Provides a user interface for inputting function code and metadata.
+    Action: Sends HTTP requests to the backend to deploy, update, or manage functions.
+
+Backend:
+
+    Role: Acts as the API gateway and business logic layer.
+    Action:
+        Listens for HTTP requests from the frontend.
+        Receives function code and its accompanying metadata (e.g., function name, language, timeout settings, resource limits).
+        Persists both the function code and its metadata in a database.
+
+Task Scheduler:
+
+    Role: Coordinates function execution.
+    Action:
+        Monitors the database (or a message queue) for functions that need to be executed.
+        Retrieves the necessary function details from storage and assigns the execution task to the execution engine.
+
+Execution Engine:
+
+    Role: Executes the functions in an isolated environment.
+    Action:
+        Retrieves functions (code and metadata) handed off by the scheduler.
+        Runs the functions using the appropriate virtualization technology (e.g., Docker, Firecracker microVMs, or similar).
+        Enforces execution constraints (timeouts, resource limits) during function execution.
+
+Metrics Collector:
+
+    Role: Gathers performance and execution data from the execution engines.
+    Action:
+        Collects information such as response times, error rates, and resource utilization from the execution environments.
+        Stores this aggregated data in a metrics store.
+        Provides a dedicated REST endpoint that the frontend can query to display real-time monitoring dashboards.
+
 
 ```
 serverless-platform/
