@@ -43,8 +43,9 @@ Components
         Provides data to the monitoring dashboard for visualization.
 
 
-# intial project folder structure
+# intial project structure subject to change
 
+'''
 serverless-platform/
 ├── backend/
 │   ├── api/
@@ -99,4 +100,4 @@ serverless-platform/
 ├── docker-compose.yml
 ├── package.json
 └── README.md
-
+'''
