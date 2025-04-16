@@ -3,6 +3,7 @@ import time
 import shutil
 import tempfile
 import docker
+import signal
 
 # Initialize docker client (make sure Docker is running and you have the python docker package installed)
 client = docker.from_env()
@@ -73,7 +74,7 @@ def build_function_image(function_id: int, language: str, code: str) -> str:
         # Clean up temporary build directory.
         shutil.rmtree(build_dir)
 
-
+#standard docker container
 def warm_start_container(function_id: int, image_tag: str):
     """
     Start a warm container for the given function.
@@ -112,7 +113,6 @@ def return_container_to_pool(function_id: int, container):
     print(f"[Pool] Container returned to pool for function {function_id}.")
 
 
-import signal
 
 def run_function_in_pool(function_id: int, image_tag: str, language: str, timeout: int) -> dict:
     """
@@ -158,6 +158,73 @@ def run_function_in_pool(function_id: int, image_tag: str, language: str, timeou
 
     # Return the container to the pool for reuse.
     return_container_to_pool(function_id, container)
+    return result
+
+
+### gVisor Container Pooling Functions
+def warm_start_container_gvisor(function_id: int, image_tag: str):
+    """
+    Starts a warm container using gVisor by specifying the runtime 'runsc'.
+    """
+    try:
+        print(f"[Pool] Warming up gVisor container for function {function_id} using image '{image_tag}'...")
+        container = client.containers.run(
+            image_tag,
+            command="tail -f /dev/null",
+            detach=True,
+            runtime="runsc"  # Use gVisor's runtime
+        )
+        return container
+    except docker.errors.DockerException as de:
+        print(f"[Pool] gVisor error while warming container: {str(de)}")
+        raise de
+
+def get_warm_container_gvisor(function_id: int, image_tag: str):
+    pool = container_pool_gvisor.get(function_id, [])
+    if pool:
+        container = pool.pop(0)
+        print(f"[Pool] Reusing gVisor container for function {function_id}.")
+        return container
+    else:
+        return warm_start_container_gvisor(function_id, image_tag)
+
+def return_container_to_pool_gvisor(function_id: int, container):
+    container_pool_gvisor.setdefault(function_id, []).append(container)
+    print(f"[Pool] gVisor container returned to pool for function {function_id}.")
+
+def run_function_in_gvisor(function_id: int, image_tag: str, language: str, timeout: int) -> dict:
+    container = get_warm_container_gvisor(function_id, image_tag)
+    start_time = time.time()
+    try:
+        if language.lower() == "python":
+            cmd = "python function.py"
+        elif language.lower() == "javascript":
+            cmd = "node function.js"
+        else:
+            raise ValueError("Unsupported language.")
+        
+        print(f"[Exec] Executing command '{cmd}' in gVisor container for function {function_id}.")
+        exec_result = container.exec_run(cmd=cmd, demux=True)
+        exit_code = exec_result.exit_code
+        stdout, stderr = exec_result.output if exec_result.output else (b"", b"")
+        execution_time = time.time() - start_time
+
+        logs = (stdout.decode("utf-8") if stdout else "") + (stderr.decode("utf-8") if stderr else "")
+        result = {
+            "logs": logs,
+            "execution_time": execution_time,
+            "exit_code": exit_code
+        }
+    except Exception as e:
+        result = {"error": str(e)}
+        try:
+            container.kill()
+            container.remove()
+        except Exception:
+            pass
+        return result
+
+    return_container_to_pool_gvisor(function_id, container)
     return result
 
 #def run_function_image(image_tag: str, timeout: int) -> dict:
