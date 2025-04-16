@@ -1,48 +1,33 @@
 time to get S grade in this boi
 
-# Architecture Overview
-Components
+# High-Level Architecture:
 
-    Frontend (Monitoring Dashboard)
+    Frontend (Streamlit): 
+    User Interface for function management (CRUD) and viewing the monitoring dashboard.
 
-        Built with Streamlit or a similar framework.
-        Allows users to deploy, manage, and monitor functions.
-        Displays real-time metrics: request volume, response times, error rates, and resource utilization.
+    Backend API (FastAPI):
+        Handles HTTP requests from the Frontend (for management) and external clients (for function invocation).
+        Manages function metadata in the SQLite database.
+        Interacts with the Execution Engine.
+        Serves aggregated metrics data to the Frontend dashboard.
 
-    Backend API Server
+    Execution Engine (Python Module within Backend):
+        Receives invocation requests from the API.
+        Manages a pool of pre-warmed containers (Docker & gVisor).
+        Interacts with the Docker daemon (via Docker SDK or CLI) to run functions in containers/sandboxes.
+        Enforces timeouts.
+        Collects basic execution metrics (time, status, resource usage if easy).
+        Stores metrics in the SQLite database.
 
-        Implemented using FastAPI (Python).
-        Exposes RESTful endpoints for:
-            Function deployment and management (CRUD operations).
-            Triggering function executions via HTTP requests.
-            Retrieving execution metrics and logs.
+    Virtualization Layer (Docker Engine):
+        Runs standard Docker containers.
+        Runs firecracker (preferred) or else gvisor sandboxes using runc runtime configured in docker
 
-    Database
-
-        Stores function metadata:
-            Function name, route, language, timeout settings.
-            Execution constraints and user information.
-        Stores execution metrics and logs.
-
-    Execution Engine
-
-        Manages function execution environments.
-        Supports multiple virtualization technologies:
-            Docker Containers: For general-purpose function execution.
-            Firecracker MicroVMs: For lightweight, secure, and fast-starting environments.
-        Implements:
-            Pre-warmed execution environments to reduce cold start latency.
-            Request batching for efficient resource utilization.
-            Timeout enforcement and resource usage restrictions.
-
-    Metrics Collector
-
-        Aggregates execution data:
-            Response times, error rates, resource consumption.
-        Provides data to the monitoring dashboard for visualization.
+    Database (SQLite):
+        Stores function metadata (name, route, language, timeout, code path, virtualization choice).
+        Stores raw execution metrics (timestamp, duration, status, function_id, virtualization_tech).
 
 # Business Logic
-
 Frontend:
 
     Role: Provides a user interface for inputting function code and metadata.
@@ -56,7 +41,7 @@ Backend:
         Receives function code and its accompanying metadata (e.g., function name, language, timeout settings, resource limits).
         Persists both the function code and its metadata in a database.
 
-Task Scheduler:
+Wrapper:
 
     Role: Coordinates function execution.
     Action:
@@ -80,58 +65,3 @@ Metrics Collector:
         Provides a dedicated REST endpoint that the frontend can query to display real-time monitoring dashboards.
 
 
-```
-serverless-platform/
-├── backend/
-│   ├── api/
-│   │   ├── routes/
-│   │   ├── controllers/
-│   │   │   ├── functionsController.js
-│   │   │   └── metricsController.js
-│   │   ├── app.js
-│   │   └── functions.js
-│   ├── execution-engine/
-│   │   ├── docker/
-│   │   │   ├── python/
-│   │   │   │   └── Dockerfile
-│   │   │   └── javascript/
-│   │   │       └── Dockerfile
-│   │   ├── firecracker/
-│   │   │   └── setup_scripts/
-│   │   └── nanos/
-│   │       └── setup_scripts/
-│   ├── metrics/
-│   │   ├── collector.js
-│   │   └── aggregator.js
-│   ├── database/
-│   │   ├── models/
-│   │   │   ├── function.js
-│   │   │   └── metrics.js
-│   │   └── index.js
-│   └── utils/
-│       ├── logger.js
-│       └── config.js
-├── frontend/
-│   ├── components/
-│   │   ├── FunctionForm.js
-│   │   ├── FunctionList.js
-│   │   └── MetricsDashboard.js
-│   ├── pages/
-│   │   ├── index.js
-│   │   └── functionDetails.js
-│   └── app.js
-├── scripts/
-│   ├── deploy.sh
-│   └── setup_env.sh
-├── tests/
-│   ├── backend/
-│   └── frontend/
-├── docs/
-│   ├── architecture.md
-│   └── api_spec.md
-├── .env
-├── .gitignore
-├── docker-compose.yml
-├── package.json
-└── README.md
-```
