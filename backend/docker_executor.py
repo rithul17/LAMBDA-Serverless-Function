@@ -112,19 +112,11 @@ def return_container_to_pool(function_id: int, container):
     container_pool.setdefault(function_id, []).append(container)
     print(f"[Pool] Container returned to pool for function {function_id}.")
 
-
-
 def run_function_in_pool(function_id: int, image_tag: str, language: str, timeout: int) -> dict:
-    """
-    Execute the function using a warm container from the pool.
-    The function is executed via Docker's exec_run, and the container is
-    returned to the pool after execution.
-    """
     container = get_warm_container(function_id, image_tag)
     start_time = time.time()
     
     try:
-        # Determine the command based on language.
         if language.lower() == "python":
             cmd = "python function.py"
         elif language.lower() == "javascript":
@@ -132,20 +124,25 @@ def run_function_in_pool(function_id: int, image_tag: str, language: str, timeou
         else:
             raise ValueError("Unsupported language.")
         
-        print(f"[Exec] Executing command '{cmd}' in container for function {function_id}.")
-        
-        # Run the function code within the container (without timeout parameter)
+        print(f"[Exec] Executing command '{cmd}' in Docker container for function {function_id}.")
         exec_result = container.exec_run(cmd=cmd, demux=True)
         exit_code = exec_result.exit_code
         stdout, stderr = exec_result.output if exec_result.output else (b"", b"")
         execution_time = time.time() - start_time
-
-        # Process the output.
+        
+        # Query container stats after execution (non-streaming mode)
+        stats = container.stats(stream=False)
+        # For simplicity, get memory usage (in bytes) and raw CPU total usage.
+        memory_usage = stats.get("memory_stats", {}).get("usage", 0)
+        cpu_usage = stats.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
+        
         logs = (stdout.decode("utf-8") if stdout else "") + (stderr.decode("utf-8") if stderr else "")
         result = {
             "logs": logs,
             "execution_time": execution_time,
-            "exit_code": exit_code
+            "exit_code": exit_code,
+            "cpu_usage": cpu_usage,
+            "memory_usage": memory_usage
         }
     except Exception as e:
         result = {"error": str(e)}
@@ -156,9 +153,10 @@ def run_function_in_pool(function_id: int, image_tag: str, language: str, timeou
             pass
         return result
 
-    # Return the container to the pool for reuse.
     return_container_to_pool(function_id, container)
     return result
+
+
 
 
 ### gVisor Container Pooling Functions
@@ -192,9 +190,12 @@ def return_container_to_pool_gvisor(function_id: int, container):
     container_pool_gvisor.setdefault(function_id, []).append(container)
     print(f"[Pool] gVisor container returned to pool for function {function_id}.")
 
+
+
 def run_function_in_gvisor(function_id: int, image_tag: str, language: str, timeout: int) -> dict:
     container = get_warm_container_gvisor(function_id, image_tag)
     start_time = time.time()
+    
     try:
         if language.lower() == "python":
             cmd = "python function.py"
@@ -208,12 +209,18 @@ def run_function_in_gvisor(function_id: int, image_tag: str, language: str, time
         exit_code = exec_result.exit_code
         stdout, stderr = exec_result.output if exec_result.output else (b"", b"")
         execution_time = time.time() - start_time
-
+        
+        stats = container.stats(stream=False)
+        memory_usage = stats.get("memory_stats", {}).get("usage", 0)
+        cpu_usage = stats.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
+        
         logs = (stdout.decode("utf-8") if stdout else "") + (stderr.decode("utf-8") if stderr else "")
         result = {
             "logs": logs,
             "execution_time": execution_time,
-            "exit_code": exit_code
+            "exit_code": exit_code,
+            "cpu_usage": cpu_usage,
+            "memory_usage": memory_usage
         }
     except Exception as e:
         result = {"error": str(e)}
@@ -226,43 +233,3 @@ def run_function_in_gvisor(function_id: int, image_tag: str, language: str, time
 
     return_container_to_pool_gvisor(function_id, container)
     return result
-
-#def run_function_image(image_tag: str, timeout: int) -> dict:
-#    """
-#    Run the Docker container built from the image tag with a specified timeout.
-#    The function waits for completion within the timeout window and then retrieves logs.
-#
-#    :param image_tag: The Docker image tag to run.
-#    :param timeout: Maximum allowed execution time (in seconds).
-#    :return: Dictionary containing container logs, execution time, and exit status.
-#    """
-#    try:
-#        print(f"Running container from image '{image_tag}' with timeout {timeout} seconds...")
-#        container = client.containers.run(image_tag, detach=True)
-#
-#        start_time = time.time()
-#        exit_status = None
-#
-#        try:
-#            # Wait for the container to finish.
-#            exit_status = container.wait(timeout=timeout)
-#        except Exception as e:
-#            # If execution takes too long, kill container.
-#            print(f"Execution timeout reached: {e}. Terminating container.")
-#            container.kill()
-#            return {"error": f"Function execution exceeded timeout of {timeout} seconds."}
-#        finally:
-#            execution_time = time.time() - start_time
-#
-#        # Retrieve container logs.
-#        logs = container.logs().decode("utf-8")
-#        # Remove the container after execution.
-#        container.remove()
-#        return {
-#            "logs": logs,
-#            "execution_time": execution_time,
-#            "exit_code": exit_status.get("StatusCode") if exit_status else None
-#        }
-#    except docker.errors.DockerException as de:
-#        return {"error": f"Docker error: {str(de)}"}
-#
