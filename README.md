@@ -1,67 +1,193 @@
 time to get S grade in this boi
 
-# High-Level Architecture:
+# Serverless Function Execution Platform
 
-## Frontend (Streamlit): 
-- User Interface for function management (CRUD) and viewing the monitoring dashboard.
+---
+## Table of Contents
 
-## Backend API (FastAPI):
-- Handles HTTP requests from the Frontend (for management) and external clients (for function invocation).
-- Manages function metadata in the SQLite database.
-- Interacts with the Execution Engine.
-- Serves aggregated metrics data to the Frontend dashboard.
+- [Architecture Overview](#architecture-overview)
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Project Structure](#project-structure)
+- [Setup & Installation](#setup--installation)
+  - [Backend](#backend)
+  - [Frontend](#frontend)
+- [Docker & gVisor Runtime Configuration](#docker--gvisor-runtime-configuration)
+- [Running the Backend](#running-the-backend)
+- [Running the Frontend](#running-the-frontend)
+- [API Endpoints](#api-endpoints)
+  - [Function CRUD](#function-crud)
+  - [Execute Function](#execute-function)
+  - [Metrics](#metrics)
+- [Usage Examples (curl)](#usage-examples-curl)
+- [Notes & Next Steps](#notes--next-steps)
 
-## Execution Engine (Python Module within Backend):
-- Receives invocation requests from the API.
-- Manages a pool of pre-warmed containers (Docker & gVisor).
-- Interacts with the Docker daemon (via Docker SDK or CLI) to run functions in containers/sandboxes.
-- Enforces timeouts.
-- Collects basic execution metrics (time, status, resource usage if easy).
-- Stores metrics in the SQLite database.
+---
 
-## Virtualization Layer (Docker Engine):
-- Runs standard Docker containers.
-- Runs firecracker (preferred) or else gvisor sandboxes using runc runtime configured in docker
+## Architecture Overview
 
-## Database (SQLite):
-- Stores function metadata (name, route, language, timeout, code path, virtualization choice).
-- Stores raw execution metrics (timestamp, duration, status, function_id, virtualization_tech).
+1. **FastAPI Backend**: Manages function metadata, image building, container pooling, execution, and metrics storage (SQLite + SQLAlchemy).
+2. **Docker Executor Module**: Builds Docker images for user functions, maintains a warm container pool, and runs code with timeout enforcement.
+3. **gVisor Integration**: Optional execution mode using the `runsc` runtime for lightweight isolation.
+4. **Streamlit Frontend**: Multi-page UI for managing functions (CRUD), invoking executions (Docker/gVisor), and visualizing metrics.
 
-# Business Logic
-## Frontend:
-Role: Provides a user interface for inputting function code and metadata.
+---
 
-Action: Sends HTTP requests to the backend to deploy, update, or manage functions.
+## Features
 
-## Backend:
-Role: Acts as the API gateway and business logic layer.
+- **Function Management**: Create, read, update, delete functions via REST API or frontend.
+- **On-Demand Execution**: Run user-provided code with Docker or gVisor environments.
+- **Container Pooling**: Pre-warmed containers to reduce cold-start latency.
+- **Dual Virtualization**: Compare performance between Docker and gVisor runtimes.
+- **Real-Time Monitoring**: View per-function execution metrics and trends in the dashboard.
 
-Action:
-- Listens for HTTP requests from the frontend.
-- Receives function code and its accompanying metadata (e.g., function name, language, timeout settings, resource limits).
-- Persists both the function code and its metadata in a database.
+---
 
-## Wrapper:
-Role: Coordinates function execution.
+## Prerequisites
 
-Action:
-- Monitors the database (or a message queue) for functions that need to be executed.
-- Retrieves the necessary function details from storage and assigns the execution task to the execution engine.
+- **Operating System**: Arch Linux (or any Linux with Docker & gVisor support)
+- **Docker**: Ensure Docker Engine is installed and running.
+- **Python 3.10+**
+- **runsc (gVisor)**: For gVisor mode (optional). Install via AUR or official instructions.
 
-## Execution Engine:
-Role: Executes the functions in an isolated environment.
+---
 
-Action:
-- Retrieves functions (code and metadata) handed off by the scheduler.
-- Runs the functions using the appropriate virtualization technology (e.g., Docker, Firecracker microVMs, or similar).
-- Enforces execution constraints (timeouts, resource limits) during function execution.
+## Project Structure
+>>>>>>> a01ac9e (final README)
 
-## Metrics Collector:
-Role: Gathers performance and execution data from the execution engines.
+```
+project-root/
+│
+├── backend/
+│   ├── main.py              # FastAPI application
+│   ├── docker_executor.py   # Docker & gVisor execution logic
+│   ├── functions.db         # SQLite database
+│   └── requirements.txt     # Python dependencies for backend
+│
+├── frontend/
+│   └── streamlit_app.py     
+│   └── requirements.txt     # Python dependencies for frontend
+│
+└── README.md                
+```
 
-Action:
-- Collects information such as response times, error rates, and resource utilization from the execution environments.
-- Stores this aggregated data in a metrics store.
-- Provides a dedicated REST endpoint that the frontend can query to display real-time monitoring dashboards.
+---
 
+## Setup & Installation
 
+### Backend
+
+1. **Navigate to backend folder**:
+   ```bash
+   cd backend
+   ```
+2. **Create & activate a virtual environment**:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Frontend
+
+1. **Navigate to frontend folder** (or project root if it’s in the same directory):
+   ```bash
+   cd frontend
+   ```
+2. **Install Streamlit & dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+---
+
+## Running the Backend
+
+Within `backend/` venv:
+
+```bash
+uvicorn main:app --reload
+```
+or if you are special then use this command
+to ensure that the python interpreter is used while running uvicorn
+
+```bash
+python -m uvicorn main:app --reload
+```
+
+The API will be available at `http://localhost:8000`.
+
+---
+
+## Running the Frontend
+
+From the `frontend/` folder or project root:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Open the displayed URL (e.g., `http://localhost:8501`) in your browser.
+
+---
+
+## API Endpoints
+
+### Function CRUD
+
+| Method | Endpoint              | Description                      |
+|--------|-----------------------|----------------------------------|
+| POST   | `/functions/`         | Create a new function metadata   |
+| GET    | `/functions/`         | List all functions               |
+| GET    | `/functions/{id}`     | Get function by ID               |
+| PUT    | `/functions/{id}`     | Update function metadata         |
+| DELETE | `/functions/{id}`     | Delete a function                |
+
+### Execute Function
+
+```
+POST /execute/{id}?mode=<docker|gvisor>
+Body: { "code": "...user code..." }
+```
+
+Returns JSON with:
+- `logs`: combined stdout/stderr from execution
+- `execution_time`: time in seconds
+- `exit_code` or `error`
+
+### Metrics
+
+| Method | Endpoint              | Description                           |
+|--------|-----------------------|---------------------------------------|
+| GET    | `/metrics/`           | Aggregate metrics for all functions   |
+
+*Note: to get metrics per function, filter the `/metrics/` result by `function_id`.*
+
+---
+
+## Usage Examples (curl)
+
+```bash
+# Create a function
+curl -X POST http://localhost:8000/functions/ \
+     -H "Content-Type: application/json" \
+     -d '{"name":"f1","route":"/exec/f1","language":"python","timeout":30}'
+
+# Execute in Docker
+curl -X POST "http://localhost:8000/execute/1?mode=docker" \
+     -H "Content-Type: application/json" \
+     -d '{"code":"print(\"Hello\")"}'
+
+# Execute in gVisor
+curl -X POST "http://localhost:8000/execute/1?mode=gvisor" \
+     -H "Content-Type: application/json" \
+     -d '{"code":"print(\"Hi gVisor\")"}'
+
+# Fetch all metrics
+curl http://localhost:8000/metrics/
+```
+
+---
