@@ -1,7 +1,6 @@
 time to get S grade in this boi
 
 # Serverless Function Execution Platform
-
 ---
 ## Table of Contents
 
