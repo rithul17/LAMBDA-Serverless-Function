@@ -5,26 +5,16 @@ import tempfile
 import docker
 import signal
 
-# Initialize docker client (make sure Docker is running and you have the python docker package installed)
+# Initialize docker client
 client = docker.from_env()
 
-# Global in-memory container pool.
-# Mapping function_id (int) -> list of warm containers
+# Global in-memory container pool
 container_pool = {}
-
-# gVisor pool (using runtime "runsc")
 container_pool_gvisor = {}
 
 def build_function_image(function_id: int, language: str, code: str) -> str:
     """
     Build a Docker image for the function based on its language and code.
-    The function image tag is constructed using the function ID and language.
-    A temporary build context is created and then cleaned up.
-
-    :param function_id: Unique identifier of the function.
-    :param language: Programming language ('python' or 'javascript').
-    :param code: The user-supplied function code as a string.
-    :return: A Docker image tag string.
     """
     build_dir = tempfile.mkdtemp(prefix=f"function_{function_id}_")
     
@@ -74,27 +64,21 @@ def build_function_image(function_id: int, language: str, code: str) -> str:
         # Clean up temporary build directory.
         shutil.rmtree(build_dir)
 
-#standard docker container
 def warm_start_container(function_id: int, image_tag: str):
     """
     Start a warm container for the given function.
-    The container is run with a command that keeps it alive (tail -f /dev/null)
-    so that it can be reused for function execution.
     """
     try:
         print(f"[Pool] Warming up container for function {function_id} using image '{image_tag}'...")
-        # Run the container in detached mode so that it stays alive.
         container = client.containers.run(image_tag, command="tail -f /dev/null", detach=True)
         return container
     except docker.errors.DockerException as de:
         print(f"[Pool] Error warming container: {str(de)}")
         raise de
 
-
 def get_warm_container(function_id: int, image_tag: str):
     """
     Get an available warm container for the given function.
-    If one does not exist in the pool, create a new one.
     """
     pool = container_pool.get(function_id, [])
     if pool:
@@ -104,7 +88,6 @@ def get_warm_container(function_id: int, image_tag: str):
     else:
         return warm_start_container(function_id, image_tag)
 
-
 def return_container_to_pool(function_id: int, container):
     """
     Return the container to the pool after use.
@@ -112,8 +95,47 @@ def return_container_to_pool(function_id: int, container):
     container_pool.setdefault(function_id, []).append(container)
     print(f"[Pool] Container returned to pool for function {function_id}.")
 
-def run_function_in_pool(function_id: int, image_tag: str, language: str, timeout: int) -> dict:
+def update_container_code(container, code: str, language: str):
+    """
+    Update the code in the container with new code.
+    """
+    code_file = "function.py" if language.lower() == "python" else "function.js"
+    
+    with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+        tmp.write(code)
+        tmp.flush()
+        tmp_path = tmp.name
+    
+    try:
+        # Copy the new code file into the container
+        cmd = f"docker cp {tmp_path} {container.id}:/app/{code_file}"
+        print(f"[Update] Running: {cmd}")
+        result = os.system(cmd)
+        if result != 0:
+            print(f"[Update] Failed to update code in container: {result}")
+            raise Exception(f"Failed to update code in container: {result}")
+    finally:
+        os.unlink(tmp_path)  # Remove temporary file
+
+def run_function_in_pool(function_id: int, image_tag: str, language: str, timeout: int, code: str = None) -> dict:
+    """
+    Execute function in a Docker container, with the option to update the code.
+    """
     container = get_warm_container(function_id, image_tag)
+    
+    # If code is provided, update it in the container
+    if code is not None:
+        try:
+            update_container_code(container, code, language)
+        except Exception as e:
+            print(f"[Exec] Failed to update code: {str(e)}")
+            try:
+                container.remove(force=True)
+            except:
+                pass
+            # Recreate container with fresh code
+            container = warm_start_container(function_id, image_tag)
+    
     start_time = time.time()
     
     try:
@@ -130,9 +152,8 @@ def run_function_in_pool(function_id: int, image_tag: str, language: str, timeou
         stdout, stderr = exec_result.output if exec_result.output else (b"", b"")
         execution_time = time.time() - start_time
         
-        # Query container stats after execution (non-streaming mode)
+        # Query container stats after execution
         stats = container.stats(stream=False)
-        # For simplicity, get memory usage (in bytes) and raw CPU total usage.
         memory_usage = stats.get("memory_stats", {}).get("usage", 0)
         cpu_usage = stats.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
         
@@ -156,13 +177,9 @@ def run_function_in_pool(function_id: int, image_tag: str, language: str, timeou
     return_container_to_pool(function_id, container)
     return result
 
-
-
-
-### gVisor Container Pooling Functions
 def warm_start_container_gvisor(function_id: int, image_tag: str):
     """
-    Starts a warm container using gVisor by specifying the runtime 'runsc'.
+    Starts a warm container using gVisor.
     """
     try:
         print(f"[Pool] Warming up gVisor container for function {function_id} using image '{image_tag}'...")
@@ -190,10 +207,25 @@ def return_container_to_pool_gvisor(function_id: int, container):
     container_pool_gvisor.setdefault(function_id, []).append(container)
     print(f"[Pool] gVisor container returned to pool for function {function_id}.")
 
-
-
-def run_function_in_gvisor(function_id: int, image_tag: str, language: str, timeout: int) -> dict:
+def run_function_in_gvisor(function_id: int, image_tag: str, language: str, timeout: int, code: str = None) -> dict:
+    """
+    Execute function in a gVisor container, with the option to update the code.
+    """
     container = get_warm_container_gvisor(function_id, image_tag)
+    
+    # If code is provided, update it in the container
+    if code is not None:
+        try:
+            update_container_code(container, code, language)
+        except Exception as e:
+            print(f"[Exec] Failed to update code in gVisor container: {str(e)}")
+            try:
+                container.remove(force=True)
+            except:
+                pass
+            # Recreate container with fresh code
+            container = warm_start_container_gvisor(function_id, image_tag)
+    
     start_time = time.time()
     
     try:

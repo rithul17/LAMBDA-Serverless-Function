@@ -119,6 +119,7 @@ def delete_function(function_id: int, db: Session = Depends(get_db)):
     return {"detail": f"Function id {function_id} deleted."}
 
 # Enhanced /execute Endpoint with Metrics Collection including resource metrics
+
 @app.post("/execute/{function_id}")
 def execute_function(
     function_id: int,
@@ -136,9 +137,11 @@ def execute_function(
         raise HTTPException(status_code=500, detail=f"Error building Docker image: {str(e)}")
     
     if mode.lower() == "gvisor":
-        result = docker_executor.run_function_in_gvisor(function_id, image_tag, db_function.language, db_function.timeout)
+        # Pass the code to the execution function
+        result = docker_executor.run_function_in_gvisor(function_id, image_tag, db_function.language, db_function.timeout, execution.code)
     else:
-        result = docker_executor.run_function_in_pool(function_id, image_tag, db_function.language, db_function.timeout)
+        # Pass the code to the execution function
+        result = docker_executor.run_function_in_pool(function_id, image_tag, db_function.language, db_function.timeout, execution.code)
     
     response_time = float(result.get("execution_time", 0))
     exit_code = result.get("exit_code")
