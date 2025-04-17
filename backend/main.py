@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, func, F
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime
-import docker_executor  # Import our docker_executor module
+import execution_engine 
 
 # ----------------------
 # Database Configuration
@@ -132,16 +132,16 @@ def execute_function(
         raise HTTPException(status_code=404, detail="Function metadata not found.")
 
     try:
-        image_tag = docker_executor.build_function_image(function_id, db_function.language, execution.code)
+        image_tag = execution_engine.build_function_image(function_id, db_function.language, execution.code)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error building Docker image: {str(e)}")
     
     if mode.lower() == "gvisor":
         # Pass the code to the execution function
-        result = docker_executor.run_function_in_gvisor(function_id, image_tag, db_function.language, db_function.timeout, execution.code)
+        result = execution_engine.run_function_in_gvisor(function_id, image_tag, db_function.language, db_function.timeout, execution.code)
     else:
         # Pass the code to the execution function
-        result = docker_executor.run_function_in_pool(function_id, image_tag, db_function.language, db_function.timeout, execution.code)
+        result = execution_engine.run_function_in_pool(function_id, image_tag, db_function.language, db_function.timeout, execution.code)
     
     response_time = float(result.get("execution_time", 0))
     exit_code = result.get("exit_code")
