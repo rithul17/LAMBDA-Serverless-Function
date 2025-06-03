@@ -1,5 +1,3 @@
-time to get S grade in this boi
-
 # Serverless Function Execution Platform
 ---
 ## Table of Contents
@@ -52,8 +50,6 @@ time to get S grade in this boi
 ---
 
 ## Project Structure
->>>>>>> a01ac9e (final README)
-
 ```
 project-root/
 │
@@ -126,7 +122,7 @@ The API will be available at `http://localhost:8000`.
 From the `frontend/` folder or project root:
 
 ```bash
-streamlit run streamlit_app.py
+streamlit run app.py
 ```
 
 Open the displayed URL (e.g., `http://localhost:8501`) in your browser.
